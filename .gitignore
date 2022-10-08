@@ -50,3 +50,6 @@ yellow-balancer/x64/Release/yellow-balancer.tlog/link.command.1.tlog
 yellow-balancer/x64/Release/yellow-balancer.tlog/link.read.1.tlog
 yellow-balancer/x64/Release/yellow-balancer.tlog/link.write.1.tlog
 yellow-balancer/x64/Release/yellow-balancer.tlog/yellow-balancer.lastbuildstate
+*.ipch
+*.log
+yellow-balancer/x64/Release/yellow-balancer.vcxproj.FileListAbsolute.txt

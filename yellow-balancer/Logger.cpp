@@ -49,8 +49,32 @@ wstring Logger::LogFileName() {
     return Utf8ToWideChar(string(&buffer[0]).append(".log"));
 }
 
+void DeleteLogHistory(filesystem::path dir, int log_storage_duration) {
+    chrono::system_clock::time_point now = chrono::system_clock::now() - chrono::hours(log_storage_duration);
+    time_t time = chrono::system_clock::to_time_t(now);
+    struct tm tm;
+    localtime_s(&tm, &time);
+    vector<char> buffer(20);
+    strftime(&buffer[0], buffer.size(), "%y%m%d%H", &tm);
+    wstring max_file_name = Utf8ToWideChar(string(&buffer[0]).append(".log"));
+
+    if (filesystem::exists(dir)) {
+        for (const filesystem::directory_entry& it : filesystem::recursive_directory_iterator(dir)) {
+            auto ss = it.path().filename().wstring();
+            if (it.is_regular_file() && it.path().extension().string() == ".log" && it.path().filename().wstring() < max_file_name) {
+                error_code ec;
+                filesystem::remove(it.path(), ec);
+                if (ec) {
+                    //TODO сдесь запись логгер писать будет в другом потоке, нужен mutex в процедуре записи
+                }
+            }
+        }
+    }
+}
+
 void Logger::Open(filesystem::path dir) {
     dir_ = dir;
+    log_storage_duration_ = 24;
     if (!fs_.is_open()) {
         wstring file_name = LogFileName();
         dir.append(L"logs");
@@ -60,7 +84,13 @@ void Logger::Open(filesystem::path dir) {
         }
         dir.append(file_name);
         fs_.open(dir, ios::out | ios::app | ios::binary);
+        thread thread(DeleteLogHistory, dir.parent_path(), log_storage_duration_);
+        thread.detach();
     }
+}
+
+void Logger::SetLogStorageDuration(int log_storage_duration) {
+    log_storage_duration_ = log_storage_duration;
 }
 
 const string& Logger::CurTime() {

@@ -173,6 +173,7 @@ void RunStep(std::shared_ptr<ProcessesInfo> p_processes_info) {
 void RunConsole() {
     Settings settings;
     settings.Read(PROGRAM_PATH);
+    LOGGER->SetLogStorageDuration(settings.LogStorageDuration());
     ProcessesInfo processes_info;
     for (auto it = settings.Processes().begin(); it < settings.Processes().end(); ++it) {
         processes_info.AddFilter(*it);
@@ -273,6 +274,7 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lpParam) {
 
     Settings settings;
     settings.Read(PROGRAM_PATH);
+    LOGGER->SetLogStorageDuration(settings.LogStorageDuration());
     int analysis_period = settings.AnalysisPeriod();
 
     std::shared_ptr<ProcessesInfo> p_processes_info = std::make_shared<ProcessesInfo>();

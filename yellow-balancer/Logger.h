@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iomanip>
 #include <windows.h>
+#include <thread>
 #include "encoding_string.h"
 
 class Logger;
@@ -36,6 +37,7 @@ private:
     std::wstring LogFileName();
     int CurHour();
     std::filesystem::path dir_;
+    int log_storage_duration_;
 protected:
     Logger() {}
     Logger(const Logger&);
@@ -45,6 +47,7 @@ protected:
 public:
     static Logger* getInstance();
     void Open(std::filesystem::path dir);
+    void SetLogStorageDuration(int log_storage_duration);
 
     void Print(const std::string& msg, bool anyway = false);
     void Print(const std::wstring& msg, bool anyway = false);

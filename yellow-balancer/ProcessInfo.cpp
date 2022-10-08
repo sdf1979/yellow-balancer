@@ -202,7 +202,6 @@ void ProcessesInfo::Read() {
 					});
 				HANDLE thread_handle = OpenThread(THREAD_ALL_ACCESS, FALSE, info->ThreadInfos[j].Client_Id.UniqueThread);
 				if (NULL != thread_handle) {
-					GROUP_AFFINITY thread_group_affinity;
 					GetThreadGroupAffinity(thread_handle, &(it_process.first->second.threads_.back().group_affinity_));
 					CloseHandle(thread_handle);
 				}
@@ -237,7 +236,6 @@ const GROUP_AFFINITY* CalculateNumaWeight(const vector<ThreadInfo>& threads, con
 bool SetThreadAffinity(DWORD tid, const GROUP_AFFINITY* group_affinity) {
 	HANDLE thread_handle = OpenThread(THREAD_ALL_ACCESS, FALSE, tid);
 	if (NULL != thread_handle) {
-		GROUP_AFFINITY thread_group_affinity;
 		SetThreadGroupAffinity(thread_handle, group_affinity, NULL);
 		CloseHandle(thread_handle);
 		return true;
@@ -405,7 +403,7 @@ vector<USHORT> ProcessesInfo::GetProcessNumaGroup(ULONG id_process) {
 	HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, id_process);
 	if (hProcess != NULL) {
 		std::vector<USHORT> GroupArray(128);
-		USHORT GroupCount = GroupArray.size();
+		USHORT GroupCount = static_cast<USHORT>(GroupArray.size());
 		if (GetProcessGroupAffinity(hProcess, &GroupCount, &GroupArray[0])) {
 			CloseHandle(hProcess);
 			GroupArray.resize(GroupCount);
