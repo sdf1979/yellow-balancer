@@ -4,6 +4,8 @@ using namespace std;
 
 Logger* Logger::logger_ = nullptr;
 LoggerDestroyer Logger::destroyer_;
+static mutex get_instance_;
+static mutex print_;
 
 LoggerDestroyer::~LoggerDestroyer() {
     delete logger_;
@@ -14,6 +16,7 @@ void LoggerDestroyer::initialize(Logger* logger) {
 }
 
 Logger* Logger::getInstance() {
+    lock_guard<mutex> guard(get_instance_);
     if (!logger_) {
         logger_ = new Logger();
         logger_->time_buffer_ = string(24, '\0');
@@ -25,6 +28,7 @@ Logger* Logger::getInstance() {
 }
 
 Logger::~Logger() {
+    Print(L"LOGGER DESTROYER!!!", Logger::Type::Trace);
     if (fs_.is_open()) {
         fs_.close();
     }
@@ -117,7 +121,7 @@ void Logger::Print(const string& msg, Logger::Type type, bool anyway) {
 }
 
 void Logger::Print(const wstring& msg, Logger::Type type, bool anyway) {
-
+    lock_guard<mutex> guard(print_);
     if (cur_hour_ != CurHour()) {
         if (fs_.is_open()) {
             fs_.close();

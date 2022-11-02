@@ -150,6 +150,7 @@
     <ClCompile Include="encoding_string.cpp" />
     <ClCompile Include="Logger.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="perf_monitor.cpp" />
     <ClCompile Include="ProcessInfo.cpp" />
     <ClCompile Include="program_options.cpp" />
     <ClCompile Include="settings.cpp" />
@@ -157,8 +158,10 @@
   <ItemGroup>
     <ClInclude Include="encoding_string.h" />
     <ClInclude Include="Logger.h" />
+    <ClInclude Include="perf_monitor.h" />
     <ClInclude Include="ProcessInfo.h" />
     <ClInclude Include="program_options.h" />
+    <ClInclude Include="ring_buffer.h" />
     <ClInclude Include="settings.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -14,18 +14,18 @@ static auto LOGGER = Logger::getInstance();
 
 static std::filesystem::path PROGRAM_PATH;
 static std::filesystem::path FILE_PATH;
-//static std::filesystem::path SETTINGS_PATH;
 
 SERVICE_STATUS g_ServiceStatus = { 0 };
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
 HANDLE g_ServiceStopEvent = INVALID_HANDLE_VALUE;
+HANDLE g_ServiceThreadStop = INVALID_HANDLE_VALUE;
 
 VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv);
 VOID WINAPI ServiceCtrlHandler(DWORD);
-DWORD WINAPI ServiceWorkerThread(LPVOID lpParam);
+DWORD WINAPI WorkerThread(LPVOID lpParam);
 
 wchar_t SERVICE_NAME[100] = L"Yellow Balancer Service";
-static const std::wstring VERSION = L"1.0";
+static const std::wstring VERSION = L"1.1";
 
 void RunConsole();
 int InstallService(LPCWSTR serviceName, LPCWSTR servicePath);
@@ -89,6 +89,33 @@ void SetLoggerLevel(Logger* logger, const std::wstring& level) {
     else if (level == L"error") logger->SetLogType(Logger::Error);
 }
 
+BOOL WINAPI HandlerRoutine(DWORD dwCtrlType) {
+    if (!g_ServiceStopEvent) return false;
+    switch (dwCtrlType) {
+    case CTRL_C_EVENT:
+        LOGGER->Print(L"CTRL_C_EVENT", Logger::Type::Trace);
+        SetEvent(g_ServiceStopEvent);
+        break;
+    case CTRL_BREAK_EVENT:
+        LOGGER->Print(L"CTRL_BREAK_EVENT", Logger::Type::Trace);
+        SetEvent(g_ServiceStopEvent);
+        break;
+    case CTRL_CLOSE_EVENT:
+        LOGGER->Print(L"CTRL_CLOSE_EVENT", Logger::Type::Trace);
+        SetEvent(g_ServiceStopEvent);
+        break;
+    case CTRL_LOGOFF_EVENT:
+        LOGGER->Print(L"CTRL_LOGOFF_EVENT", Logger::Type::Trace);
+        SetEvent(g_ServiceStopEvent);
+        break;
+    case CTRL_SHUTDOWN_EVENT:
+        LOGGER->Print(L"CTRL_SHUTDOWN_EVENT", Logger::Type::Trace);
+        SetEvent(g_ServiceStopEvent);
+        break;
+    }
+    return true;
+}
+
 int wmain(int argc, wchar_t** argv) {
 
     _setmode(_fileno(stdout), _O_U16TEXT);
@@ -98,27 +125,16 @@ int wmain(int argc, wchar_t** argv) {
     ProgrammOptions program_options(argc, argv);
     GetPath();
     LOGGER->Open(PROGRAM_PATH);
-    SetLoggerLevel(LOGGER, L"info");
+    SetLoggerLevel(LOGGER, program_options.LogLevel());
 
     if (program_options.IsHelp() || argc == 1) {
         std::wcout << program_options.Help();
         return 0;
     }
 
-    /*
-    HANDLE curProcess = GetCurrentProcess();
-    HANDLE TokenHandle;
-    if (OpenProcessToken(curProcess, TOKEN_ALL_ACCESS, &TokenHandle)) {
-        SetPrivilege(TokenHandle, SE_DEBUG_NAME, TRUE);
-        CloseHandle(TokenHandle);
-    }
-    */
-
     std::wstring mode = program_options.Mode();
     if (mode == L"console") {
         LOGGER->SetOutConsole(true);
-        LOGGER->Print(L"Yellow Balancer: run console mode", true);
-        LOGGER->Print(std::wstring(L"Version: ").append(VERSION), true);
         RunConsole();
         return 0;
     }
@@ -165,21 +181,24 @@ int wmain(int argc, wchar_t** argv) {
     LOGGER->Print(L"Yellow Balancer: stop service", true);
 }
 
-void RunStep(std::shared_ptr<ProcessesInfo> p_processes_info) {
-    p_processes_info->Read();
-    p_processes_info->SetAffinity();
-}
-
 void RunConsole() {
-    Settings settings;
-    settings.Read(PROGRAM_PATH);
-    LOGGER->SetLogStorageDuration(settings.LogStorageDuration());
-    ProcessesInfo processes_info;
-    for (auto it = settings.Processes().begin(); it < settings.Processes().end(); ++it) {
-        processes_info.AddFilter(*it);
+    SetConsoleCtrlHandler(HandlerRoutine, TRUE);
+    LOGGER->Print(L"Yellow Balancer: run console mode", true);
+    LOGGER->Print(std::wstring(L"Version: ").append(VERSION), true);
+
+    g_ServiceStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (g_ServiceStopEvent) {
+        HANDLE hThread = CreateThread(NULL, 0, WorkerThread, NULL, 0, NULL);
+        std::wcout << L"Press Ctrl+C for exit\n";
+        WaitForSingleObject(g_ServiceStopEvent, INFINITE);
+        CloseHandle(g_ServiceStopEvent);
+        CloseHandle(hThread);
+        g_ServiceStopEvent = INVALID_HANDLE_VALUE;
     }
-    processes_info.Read();
-    processes_info.SetAffinity();
+    g_ServiceThreadStop = CreateEvent(NULL, TRUE, FALSE, NULL);
+    WaitForSingleObject(g_ServiceThreadStop, 5000);
+    CloseHandle(g_ServiceThreadStop);
+    LOGGER->Print(L"Yellow Balancer: stop console mode", true);
 }
 
 int InstallService(LPCWSTR serviceName, LPCWSTR servicePath) {
@@ -269,34 +288,45 @@ int RemoveService(LPCWSTR serviceName) {
     return 0;
 }
 
-DWORD WINAPI ServiceWorkerThread(LPVOID lpParam) {
-    LOGGER->Print("Yellow Watcher: ServiceWorkerThread: Entry", Logger::Type::Trace);
-
+DWORD WINAPI WorkerThread(LPVOID lpParam) {
+    LOGGER->Print("Yellow Watcher: WorkerThread: Entry", Logger::Type::Trace);
     Settings settings;
-    settings.Read(PROGRAM_PATH);
+    if (!settings.Read(PROGRAM_PATH)) {
+        ExitProcess(1);
+    }
     LOGGER->SetLogStorageDuration(settings.LogStorageDuration());
-    int analysis_period = settings.AnalysisPeriod();
+    int switching_frequency = settings.SwitchingFrequency();
 
-    std::shared_ptr<ProcessesInfo> p_processes_info = std::make_shared<ProcessesInfo>();
-    for (auto it = settings.Processes().begin(); it < settings.Processes().end(); ++it) {
-        p_processes_info->AddFilter(*it);
-    }
-
-    time_point last_run = {};
-    time_point cur_run = std::chrono::system_clock::now();
-
-    while (WaitForSingleObject(g_ServiceStopEvent, 0) != WAIT_OBJECT_0) {
-        std::int64_t period = std::chrono::duration_cast<std::chrono::seconds>(cur_run - last_run).count();
-        if (period >= analysis_period) {
-            RunStep(p_processes_info);
-            last_run = cur_run;
+    {
+        std::shared_ptr<ProcessesInfo> p_processes_info = std::make_shared<ProcessesInfo>();
+        p_processes_info->Init(settings.CpuAnalysisPeriod(), switching_frequency, settings.MaximumCpuValue(), settings.DeltaCpuValues());
+        for (auto it = settings.Processes().begin(); it < settings.Processes().end(); ++it) {
+            p_processes_info->AddFilter(*it);
         }
-        cur_run = std::chrono::system_clock::now();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        time_point last_run = {};
+        time_point cur_run = std::chrono::system_clock::now();
+
+        DWORD res;
+        for (;;) {
+            res = WaitForSingleObject(g_ServiceStopEvent, 0);
+            if (g_ServiceStopEvent == INVALID_HANDLE_VALUE || res != WAIT_TIMEOUT) {
+                break;
+            }
+            std::int64_t period = std::chrono::duration_cast<std::chrono::seconds>(cur_run - last_run).count();
+            if (period >= switching_frequency) {
+                p_processes_info->Read();
+                p_processes_info->SetAffinity();
+                last_run = cur_run;
+            }
+            cur_run = std::chrono::system_clock::now();
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
     }
 
-    LOGGER->Print(L"Yellow Balancer: ServiceWorkerThread: Exit", Logger::Type::Trace);
-
+    LOGGER->Print(L"Yellow Balancer: WorkerThread: Exit", Logger::Type::Trace);
+    if(g_ServiceThreadStop != INVALID_HANDLE_VALUE) SetEvent(g_ServiceThreadStop);
+    
     return ERROR_SUCCESS;
 }
 
@@ -349,7 +379,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv) {
         LOGGER->Print(L"Yellow Balancer: ServiceMain: SetServiceStatus returned error", Logger::Type::Error);
     }
 
-    HANDLE hThread = CreateThread(NULL, 0, ServiceWorkerThread, NULL, 0, NULL);
+    HANDLE hThread = CreateThread(NULL, 0, WorkerThread, NULL, 0, NULL);
     WaitForSingleObject(hThread, INFINITE);
     CloseHandle(g_ServiceStopEvent);
 

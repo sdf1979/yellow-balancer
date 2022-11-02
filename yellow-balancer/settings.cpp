@@ -10,8 +10,11 @@ static auto LOGGER = Logger::getInstance();
 void Settings::CreateSettings(const fs::path& file_path) {
     if (!fs::exists(file_path)) {
         const std::string json = R"({ 
-  "analysis_period" : 20,
-  "log_storage_duration" : 24,
+  "switching_frequency_in_seconds" : 10,
+  "cpu_analysis_period_in_seconds" : 60,
+  "log_storage_duration_in_hours" : 24,
+  "maximum_cpu_value" : 70,
+  "delta_cpu_values" : 30,
   "processes" : ["rphost.exe"]
 })";
         ofstream out(file_path);
@@ -77,8 +80,11 @@ bool Settings::Read(fs::path dir) {
         }
         
         if (json::object* j_object = j_value.if_object()) {
-            ReadValue(j_object, analysis_period_, "analysis_period", is_correct);
-            ReadValue(j_object, log_storage_duration_, "log_storage_duration", is_correct);
+            ReadValue(j_object, switching_frequency_, "switching_frequency_in_seconds", is_correct);
+            ReadValue(j_object, cpu_analysis_period_, "cpu_analysis_period_in_seconds", is_correct);
+            ReadValue(j_object, log_storage_duration_, "log_storage_duration_in_hours", is_correct);
+            ReadValue(j_object, maximum_cpu_value_, "maximum_cpu_value", is_correct);
+            ReadValue(j_object, delta_cpu_values_, "delta_cpu_values", is_correct);
             ReadValue(j_object, processes_, "processes", is_correct);
         }
         else {

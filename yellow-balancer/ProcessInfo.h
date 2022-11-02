@@ -13,6 +13,8 @@
 #include <sstream>
 #include <algorithm>
 #include "Logger.h"
+#include "perf_monitor.h"
+#include "ring_buffer.h"
 
 typedef LONG KPRIORITY;
 
@@ -103,7 +105,7 @@ typedef struct {
 #define SYSTEMPROCESSINFORMATION 5
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS) 0xC0000004)
 
-typedef NTSTATUS(WINAPI* t_NtQuerySystemInformation)(int, PVOID, ULONG, PULONG);
+typedef NTSTATUS(WINAPI* pNtQuerySystemInformation)(int, PVOID, ULONG, PULONG);
 
 typedef NTSTATUS(NTAPI* pNtSetInformationProcess)(
 	HANDLE ProcessHandle,
@@ -174,34 +176,48 @@ struct ThreadInfo {
 struct ProcessInfo {
 	ULONG pid_;
 	std::wstring name_;
-	ULONG number_threads_;
-	ULONG handle_count_;
 	FILETIME create_time_;
-	FILETIME user_time_;
-	FILETIME kernel_time_;
+	FILETIME cur_user_time_;
+	RingBuffer<LONGLONG> user_time_;
 	std::vector<ThreadInfo> threads_;
-	std::vector<WORD> numa_groups_;
 };
 
 struct ProcessInfoShort {
 	ULONG pid_;
-	LONGLONG user_time_;
+	std::wstring name_;
+	FILETIME create_time_;
+	FILETIME user_time_;
+	FILETIME kernel_time_;
+	std::vector<ThreadInfo> threads_;
 };
 
 class ProcessesInfo {
 public:
-	ProcessesInfo();
+	~ProcessesInfo();
 	ProcessesInfo& AddFilter(std::wstring process_name);
+	void Init(int cpu_analysis_period, int switching_frequency, int maximum_cpu_value, int delta_cpu_values);
 	void Read();
 	void SetAffinity();
-	void Print();
 private:
 	std::unordered_set<std::wstring> process_filter_;
 	std::vector<ProcessInfoShort> processes_short_;
 	std::unordered_map<ULONG, ProcessInfo> processes_;
-	std::vector<GROUP_AFFINITY> numa_groups_;
+	std::vector<NUMA_NODE_RELATIONSHIP> numa_groups_;
+	PerfMonitor perf_monitor_;
+	int cpu_analysis_period_;
+	int ring_buffer_size_;
+	int maximum_cpu_value_;
+	int delta_cpu_values_;
 
+	void InitPerfMonitor(int cpu_analysis_period);
+	void InitNtSetInformationProcess();
+	void InitNtQuerySystemInformation();
 	void GetNumaInfo();
 	std::vector<USHORT> GetProcessNumaGroup(ULONG id_process);
-	pNtSetInformationProcess p_set_process_affinity_;
+	pNtSetInformationProcess NtSetInformationProcess;
+	pNtQuerySystemInformation NtQuerySystemInformation;
+	std::unordered_map<ULONG, ProcessInfoShort> ActiveProcesses();
+	void DeleteOldProcess(std::unordered_map<ULONG, ProcessInfo>& lhs, const std::unordered_map<ULONG, ProcessInfoShort>& rhs);
+	void AddProcess(std::unordered_map<ULONG, ProcessInfo>& lhs, std::unordered_map<ULONG, ProcessInfoShort>& rhs);
+	bool IsNeedToSetAffinity(const std::vector<double>& values);
 };

@@ -53,3 +53,10 @@ yellow-balancer/x64/Release/yellow-balancer.tlog/yellow-balancer.lastbuildstate
 *.ipch
 *.log
 yellow-balancer/x64/Release/yellow-balancer.vcxproj.FileListAbsolute.txt
+x64/Debug/settings.json
+x64/Debug/settings.json.bak
+x64/Release/settings.json
+yellow-balancer/x64/Debug/perf_monitor.obj
+yellow-balancer/x64/Debug/processinfo.obj.enc
+yellow-balancer/x64/Debug/yellow-balancer.vcxproj.FileListAbsolute.txt
+yellow-balancer/x64/Release/perf_monitor.obj

@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <windows.h>
 #include <thread>
+#include <mutex>
 #include "encoding_string.h"
 
 class Logger;
