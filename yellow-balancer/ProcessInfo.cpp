@@ -198,7 +198,7 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 	ULONG buflen = 0;
 	NTSTATUS lResult = NtQuerySystemInformation(SYSTEMPROCESSINFORMATION, NULL, buflen, &buflen);
 	if (lResult == STATUS_INFO_LENGTH_MISMATCH) {
-		size_t new_size = static_cast<size_t>(buflen) * 3;
+		size_t new_size = static_cast<size_t>(buflen) * 2;
 		if(buffer_active_processes.size() < new_size) buffer_active_processes.resize(new_size);
 	}
 	else {
@@ -210,6 +210,7 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 		return {};
 	}
 
+	buflen = buffer_active_processes.size();
 	if (NtQuerySystemInformation(SYSTEMPROCESSINFORMATION, &buffer_active_processes[0], buflen, &buflen)) {
 		wstring msg = L"ProcessesInfo::ActiveProcesses: ";
 		msg.append(GetLastErrorAsString());

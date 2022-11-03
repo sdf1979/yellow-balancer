@@ -315,6 +315,7 @@ DWORD WINAPI WorkerThread(LPVOID lpParam) {
             }
             std::int64_t period = std::chrono::duration_cast<std::chrono::seconds>(cur_run - last_run).count();
             if (period >= switching_frequency) {
+                LOGGER->NewFileWithLock();
                 p_processes_info->Read();
                 p_processes_info->SetAffinity();
                 last_run = cur_run;

@@ -39,6 +39,7 @@ private:
     int CurHour();
     std::filesystem::path dir_;
     int log_storage_duration_;
+    void NewFile();
 protected:
     Logger() {}
     Logger(const Logger&);
@@ -50,6 +51,8 @@ public:
     void Open(std::filesystem::path dir);
     void SetLogStorageDuration(int log_storage_duration);
 
+    void NewFileWithLock();
+    
     void Print(const std::string& msg, bool anyway = false);
     void Print(const std::wstring& msg, bool anyway = false);
     void Print(const std::string& msg, Logger::Type type, bool anyway = false);

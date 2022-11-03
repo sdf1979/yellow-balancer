@@ -116,18 +116,27 @@ const string& Logger::CurTime() {
     return time_buffer_;
 }
 
-void Logger::Print(const string& msg, Logger::Type type, bool anyway) {
-    Print(Utf8ToWideChar(msg), type, anyway);
+void Logger::NewFileWithLock() {
+    lock_guard<mutex> guard(print_);
+    NewFile();
 }
 
-void Logger::Print(const wstring& msg, Logger::Type type, bool anyway) {
-    lock_guard<mutex> guard(print_);
+void Logger::NewFile() {
     if (cur_hour_ != CurHour()) {
         if (fs_.is_open()) {
             fs_.close();
         }
         Open(dir_);
     }
+}
+
+void Logger::Print(const string& msg, Logger::Type type, bool anyway) {
+    Print(Utf8ToWideChar(msg), type, anyway);
+}
+
+void Logger::Print(const wstring& msg, Logger::Type type, bool anyway) {
+    lock_guard<mutex> guard(print_);
+    NewFile();
 
     if (!anyway && type < minimum_type_) {
         return;
