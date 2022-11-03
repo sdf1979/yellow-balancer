@@ -196,19 +196,24 @@ ProcessesInfo& ProcessesInfo::AddFilter(wstring process_name) {
 
 unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 	ULONG buflen = 0;
-	std::vector<BYTE> buffer;
-
 	NTSTATUS lResult = NtQuerySystemInformation(SYSTEMPROCESSINFORMATION, NULL, buflen, &buflen);
 	if (lResult == STATUS_INFO_LENGTH_MISMATCH) {
-		buffer.resize(buflen);
+		size_t new_size = static_cast<size_t>(buflen) * 3;
+		if(buffer_active_processes.size() < new_size) buffer_active_processes.resize(new_size);
 	}
 	else {
-		LOGGER->Print(GetLastErrorAsString(), Logger::Type::Error);
+		wstring msg = L"ProcessesInfo::ActiveProcesses: ";
+		msg
+			.append(GetLastErrorAsString())
+			.append(L". Buflen=").append(to_wstring(buflen));
+		LOGGER->Print(msg, Logger::Type::Error);
 		return {};
 	}
 
-	if (NtQuerySystemInformation(SYSTEMPROCESSINFORMATION, &buffer[0], buflen, &buflen)) {
-		LOGGER->Print(GetLastErrorAsString(), Logger::Type::Error);
+	if (NtQuerySystemInformation(SYSTEMPROCESSINFORMATION, &buffer_active_processes[0], buflen, &buflen)) {
+		wstring msg = L"ProcessesInfo::ActiveProcesses: ";
+		msg.append(GetLastErrorAsString());
+		LOGGER->Print(msg, Logger::Type::Error);
 		return {};
 	}
 
@@ -216,7 +221,7 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 	unsigned int i = 0;
 	SYSTEM_PROCESS_INFORMATION* info = nullptr;
 	do {
-		info = (SYSTEM_PROCESS_INFORMATION*)&buffer[i];
+		info = (SYSTEM_PROCESS_INFORMATION*)&buffer_active_processes[i];
 		std::wstring image_name = (info->ImageName.Buffer ? info->ImageName.Buffer : L"unknow");
 		if (info->ProcessId == 0) image_name = L"System Idle Process";
 		if (process_filter_.size() == 0 || process_filter_.find(image_name) != process_filter_.end()) {
@@ -241,20 +246,6 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 					.append(L" groups ").append(vectorToWstring(process_numa_group));
 				LOGGER->Print(msg, Logger::Type::Trace);
 			}
-			/*auto it_process = processes_.insert(pair<ULONG, ProcessInfo>(
-				info->ProcessId,
-				{
-					info->ProcessId,
-					move(image_name),
-					info->ThreadCount,
-					info->HandleCount,
-					info->CreateTime,
-					info->UserTime,
-					info->KernelTime,
-					{},
-					GetProcessNumaGroup(info->ProcessId)
-				}
-			));*/
 
 			for (unsigned int j = 0; j < info->ThreadCount; j++) {
 				it_process.first->second.threads_.push_back({
@@ -395,6 +386,14 @@ void ProcessesInfo::SetAffinity() {
 	
 	vector<double> avg_values = perf_monitor_.GetAvgValues();
 	if (!IsNeedToSetAffinity(avg_values)) return;
+
+	auto& counters_name = perf_monitor_.GetCountersName();
+	for (size_t i = 0; i < counters_name.size(); ++i) {
+		wstring msg = L"AVG for ";
+		msg.append(counters_name[i]);
+		msg.append(L"=").append(to_wstring(avg_values[i]));
+		LOGGER->Print(msg, Logger::Type::Info, true);
+	}
 	
 	vector<unordered_map<ULONG, ProcessInfo>::iterator> processes_affinity;
 	for (auto it = processes_.begin(); it != processes_.end(); ++it) {
@@ -406,10 +405,18 @@ void ProcessesInfo::SetAffinity() {
 			return lhs->second.user_time_.Avg() > rhs->second.user_time_.Avg();
 		}
 	);
+
+	for (auto it = processes_affinity.begin(); it != processes_affinity.end(); ++it) {
+		wstring msg = L"AVG USER_TIME=";
+		msg.append(to_wstring((*it)->second.user_time_.Avg()))
+			.append(L" for process ").append((*it)->second.name_)
+			.append(L" with pid ").append(to_wstring((*it)->second.pid_));
+		LOGGER->Print(msg, true);
+	}
 		
 	int index_numa_group = 0;
 	const NUMA_NODE_RELATIONSHIP* cur_numa = nullptr;
-	for (auto it = processes_affinity.begin(); it < processes_affinity.end(); ++it) {
+	for (auto it = processes_affinity.begin(); it != processes_affinity.end(); ++it) {
 			
 		ProcessInfo& process = (*it)->second;
 		auto process_numa_groups = GetProcessNumaGroup(process.pid_);

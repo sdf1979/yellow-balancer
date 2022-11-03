@@ -24,6 +24,7 @@ public:
 	void StartCollecting();
 	void StopCollecting();
 	std::vector<double> GetAvgValues();
+	const std::vector<std::wstring>& GetCountersName() { return counters_name_; }
 	~PerfMonitor();
 private:
 	friend void StartCollectingThread(PerfMonitor* perf_monitor);

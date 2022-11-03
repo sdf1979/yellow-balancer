@@ -208,6 +208,7 @@ private:
 	int ring_buffer_size_;
 	int maximum_cpu_value_;
 	int delta_cpu_values_;
+	std::vector<BYTE> buffer_active_processes;
 
 	void InitPerfMonitor(int cpu_analysis_period);
 	void InitNtSetInformationProcess();

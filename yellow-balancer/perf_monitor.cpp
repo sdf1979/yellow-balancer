@@ -73,11 +73,11 @@ void PerfMonitor::Collect() {
 			lock_guard<mutex> guard(access_counters_);
 			for (int i =0; i < counters_.size(); ++i) {
 				pdhStatus = PdhGetFormattedCounterValue(*counters_[i], PDH_FMT_DOUBLE, &dwType, &pdhValue);
+				if (pdhStatus == ERROR_SUCCESS) {
+					counters_values_[i].Add(pdhValue.doubleValue);
+				}
 				if (LOGGER->LogType() == Logger::Type::Trace) {
-					if (pdhStatus == ERROR_SUCCESS) {
-						counters_values_[i].Add(pdhValue.doubleValue);
-					}
-					else if (pdhStatus == PDH_INVALID_ARGUMENT) {
+					if (pdhStatus == PDH_INVALID_ARGUMENT) {
 						LOGGER->Print(L"PDH_INVALID_ARGUMENT", Logger::Type::Trace);
 					}
 					else if (pdhStatus == PDH_INVALID_DATA) {
