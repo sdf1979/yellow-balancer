@@ -76,30 +76,32 @@ void PerfMonitor::Collect() {
 				if (pdhStatus == ERROR_SUCCESS) {
 					counters_values_[i].Add(pdhValue.doubleValue);
 				}
-				if (LOGGER->LogType() == Logger::Type::Trace) {
-					if (pdhStatus == PDH_INVALID_ARGUMENT) {
-						LOGGER->Print(L"PDH_INVALID_ARGUMENT", Logger::Type::Trace);
-					}
-					else if (pdhStatus == PDH_INVALID_DATA) {
-						LOGGER->Print(L"PDH_INVALID_DATA", Logger::Type::Trace);
-					}
-					else if (pdhStatus == PDH_INVALID_HANDLE) {
-						LOGGER->Print(L"PDH_INVALID_HANDLE", Logger::Type::Trace);
-					}
-					else {
-						LOGGER->Print(L"PDH_UNKNOW_HANDLE", Logger::Type::Trace);
+				else {
+					if (LOGGER->LogType() == Logger::Type::Trace) {
+						if (pdhStatus == PDH_INVALID_ARGUMENT) {
+							LOGGER->Print(L"PDH_INVALID_ARGUMENT", Logger::Type::Trace);
+						}
+						else if (pdhStatus == PDH_INVALID_DATA) {
+							LOGGER->Print(L"PDH_INVALID_DATA", Logger::Type::Trace);
+						}
+						else if (pdhStatus == PDH_INVALID_HANDLE) {
+							LOGGER->Print(L"PDH_INVALID_HANDLE", Logger::Type::Trace);
+						}
+						else {
+							LOGGER->Print(L"PDH_UNKNOW_HANDLE", Logger::Type::Trace);
+						}
 					}
 				}
 			}
 		}
 		else if(pdhStatus == PDH_INVALID_HANDLE){
-			LOGGER->Print(L"PDH_INVALID_HANDLE", Logger::Type::Trace);
+			LOGGER->Print(L"PdhCollectQueryData PDH_INVALID_HANDLE", Logger::Type::Trace);
 		}
 		else if (pdhStatus == PDH_NO_DATA) {
-			LOGGER->Print(L"PDH_NO_DATA", Logger::Type::Trace);
+			LOGGER->Print(L"PdhCollectQueryData PDH_NO_DATA", Logger::Type::Trace);
 		}
 		else {
-			LOGGER->Print(L"PDH_UNKNOW_HANDLE", Logger::Type::Trace);
+			LOGGER->Print(L"PdhCollectQueryData PDH_UNKNOW_HANDLE", Logger::Type::Trace);
 		}
 	}
 }

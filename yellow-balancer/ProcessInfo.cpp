@@ -424,7 +424,7 @@ void ProcessesInfo::SetAffinity() {
 			
 		if (!cur_numa) {
 			if (process_numa_groups.size() == 1) {
-				cur_numa = &numa_groups_[process_numa_groups[index_numa_group]];
+				cur_numa = &numa_groups_[0];
 			}
 			else if (process_numa_groups.size() > 1) {
 				cur_numa = CalculateNumaWeight(process.threads_, numa_groups_);
@@ -435,17 +435,16 @@ void ProcessesInfo::SetAffinity() {
 			}
 		}
 
+		LOGGER->Print(
+			wstring(process.name_).
+			append(L";pid=").append(to_wstring(process.pid_)).
+			append(L";numa=").append(vectorToWstring(process_numa_groups)).
+			append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
+			true
+		);
+
 		if (process_numa_groups.size() > 1 || process_numa_groups[0] != cur_numa->GroupMask.Group) {
-			if (SetProcessAffinity(NtSetInformationProcess, process.pid_, &cur_numa->GroupMask)) {
-				LOGGER->Print(
-					wstring(process.name_).
-					append(L";pid=").append(to_wstring(process.pid_)).
-					append(L";numa=").append(vectorToWstring(process_numa_groups)).
-					append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
-					true
-				);
-			}
-			else {
+			if (!SetProcessAffinity(NtSetInformationProcess, process.pid_, &cur_numa->GroupMask)) {
 				LOGGER->Print(L"Error set process affinity!", Logger::Type::Error);
 			}
 		}
@@ -467,7 +466,6 @@ void ProcessesInfo::SetAffinity() {
 				}
 			}
 		}			
-
 		++index_numa_group;
 		if (index_numa_group >= numa_groups_.size()) index_numa_group = 0;
 		cur_numa = &numa_groups_[index_numa_group];
