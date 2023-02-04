@@ -11,14 +11,16 @@ class ProgrammOptions {
     std::wstring log_level;
     std::wstring help;
     bool is_help;
+    bool is_version;
 public:
     ProgrammOptions(int argc, wchar_t* argv[]) {
         opt::options_description desc("All options");
 
         desc.add_options()
-            ("mode,M", opt::wvalue<std::wstring>(&mode), "launch mode (console - launch in the console, install - install the 'Yellow Balanser Service', uninstall - remove the 'Yellow Balancer Service')")
+            ("mode,M", opt::wvalue<std::wstring>(&mode), "launch mode (console - launch in the console, install - install the 'Yellow Balanser Service', uninstall - remove the 'Yellow Balancer Service', test - start testing permissions)")
             ("log,L", opt::wvalue<std::wstring>(&log_level)->default_value(L"error", "error"), "minimum level of logging (possible values ascending: trace, info, error)")
-            ("help,H", "produce help message");
+            ("help,H", "produce help message")
+            ("version,V", "version");
 
         opt::variables_map vm;
         opt::store(opt::wcommand_line_parser(argc, argv).options(desc).run(), vm);
@@ -29,9 +31,11 @@ public:
         help = Utf8ToWideChar(ss.str());
 
         is_help = vm.count("help");
+        is_version = vm.count("version");
     }
     const std::wstring& Mode() { return mode; }
     const std::wstring& LogLevel() { return log_level; }
     const std::wstring& Help() { return help; }
     bool IsHelp() { return is_help; }
+    bool IsVersion() { return is_version; }
 };

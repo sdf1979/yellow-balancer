@@ -198,6 +198,7 @@ public:
 	void Init(int cpu_analysis_period, int switching_frequency, int maximum_cpu_value, int delta_cpu_values);
 	void Read();
 	void SetAffinity();
+	void SetTest() { test = true; }
 private:
 	std::unordered_set<std::wstring> process_filter_;
 	std::vector<ProcessInfoShort> processes_short_;
@@ -221,4 +222,5 @@ private:
 	void DeleteOldProcess(std::unordered_map<ULONG, ProcessInfo>& lhs, const std::unordered_map<ULONG, ProcessInfoShort>& rhs);
 	void AddProcess(std::unordered_map<ULONG, ProcessInfo>& lhs, std::unordered_map<ULONG, ProcessInfoShort>& rhs);
 	bool IsNeedToSetAffinity(const std::vector<double>& values);
+	bool test = false;
 };

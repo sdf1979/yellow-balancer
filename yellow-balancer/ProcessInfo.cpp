@@ -79,10 +79,10 @@ void print_bitmap(ULONG_PTR mask){
 	}
 }
 
-std::wstring GetLastErrorAsString() {
+pair<DWORD, wstring> getLastError() {
 	DWORD errorMessageID = ::GetLastError();
 	if (errorMessageID == 0) {
-		return std::wstring(); //No error message has been recorded
+		return { errorMessageID, std::wstring() }; //No error message has been recorded
 	}
 
 	LPWSTR messageBuffer = nullptr;
@@ -90,7 +90,7 @@ std::wstring GetLastErrorAsString() {
 	size_t size = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 		NULL, errorMessageID, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), (LPWSTR)&messageBuffer, 0, NULL);
 
-	std::wstring message(messageBuffer, size - 2);
+	wstring message(messageBuffer, size - 2);
 
 	while (message.back() == L'\n' || message.back() == L'\n') {
 		message.pop_back();
@@ -98,7 +98,75 @@ std::wstring GetLastErrorAsString() {
 
 	LocalFree(messageBuffer);
 
-	return message;
+	return { errorMessageID, message };
+}
+
+HANDLE openProcess(ULONG id_process) {
+	HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, id_process);
+	if (hProcess == NULL) {
+		
+		auto error = getLastError();
+		if (error.first != ERROR_ACCESS_DENIED) {
+			std::wstring err_wstr = L"Error connecting to local process pid ";
+			err_wstr
+				.append(std::to_wstring(id_process)).append(L". ")
+				.append(getLastError().second);
+			LOGGER->Print(err_wstr, Logger::Type::Error);
+			return NULL;
+		}
+
+		HANDLE hToken;
+		if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hToken) == FALSE) {
+			error = getLastError();
+			std::wstring err_wstr = L"Error getting token for current process. ";
+			err_wstr
+				.append(getLastError().second);
+			LOGGER->Print(err_wstr, Logger::Type::Error);
+			return NULL;
+		}
+
+		LUID luid;
+		if (LookupPrivilegeValueW(NULL, SE_DEBUG_NAME, &luid) == FALSE) {
+			error = getLastError();
+			std::wstring err_wstr = L"Error reading SE_DEBUG_NAME privilege value for current process. ";
+			err_wstr
+				.append(getLastError().second);
+			LOGGER->Print(err_wstr, Logger::Type::Error);
+			CloseHandle(hToken);
+			return NULL;
+		}
+
+		TOKEN_PRIVILEGES newState;
+		newState.PrivilegeCount = 1;
+		newState.Privileges[0].Luid = luid;
+		newState.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+		bool res_adj_token = AdjustTokenPrivileges(hToken, FALSE, &newState, sizeof(newState), NULL, NULL);
+		error = getLastError();
+		if (!res_adj_token || error.first == ERROR_NOT_ALL_ASSIGNED) {
+			std::wstring err_wstr = L"Error setting SE_DEBUG_NAME privilege value for current process. ";
+			err_wstr
+				.append(getLastError().second);
+			LOGGER->Print(err_wstr, Logger::Type::Error);
+			CloseHandle(hToken);
+			return NULL;
+		}
+
+		hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, id_process);
+		if (hProcess == NULL) {
+			error = getLastError();
+			wstring err_wstr = L"Error connecting to local process pid ";
+			err_wstr
+				.append(std::to_wstring(id_process)).append(L". ")
+				.append(getLastError().second);
+			LOGGER->Print(err_wstr, Logger::Type::Error);
+			CloseHandle(hToken);
+			return NULL;
+		}
+
+		CloseHandle(hToken);
+	}
+	
+	return hProcess;
 }
 
 LONGLONG fileTimeToLongLong(const FILETIME& fileTime) {
@@ -204,7 +272,7 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 	else {
 		wstring msg = L"ProcessesInfo::ActiveProcesses: ";
 		msg
-			.append(GetLastErrorAsString())
+			.append(getLastError().second)
 			.append(L". Buflen=").append(to_wstring(buflen));
 		LOGGER->Print(msg, Logger::Type::Error);
 		return {};
@@ -213,7 +281,7 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 	buflen = buffer_active_processes.size();
 	if (NtQuerySystemInformation(SYSTEMPROCESSINFORMATION, &buffer_active_processes[0], buflen, &buflen)) {
 		wstring msg = L"ProcessesInfo::ActiveProcesses: ";
-		msg.append(GetLastErrorAsString());
+		msg.append(getLastError().second);
 		LOGGER->Print(msg, Logger::Type::Error);
 		return {};
 	}
@@ -355,7 +423,7 @@ bool SetThreadAffinity(DWORD tid, const GROUP_AFFINITY* group_affinity) {
 }
 
 bool SetProcessAffinity(pNtSetInformationProcess p_set_process_affinity, DWORD pid, const GROUP_AFFINITY* group_affinity) {
-	HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+	HANDLE hProcess = openProcess(pid);
 	if (hProcess != NULL) {
 		NTSTATUS status = p_set_process_affinity(hProcess, (PROCESS_INFORMATION_CLASS)0x15, (void*)group_affinity, sizeof(GROUP_AFFINITY));
 		if (!status) {
@@ -366,10 +434,7 @@ bool SetProcessAffinity(pNtSetInformationProcess p_set_process_affinity, DWORD p
 		CloseHandle(hProcess);
 		return true;
 	}
-	else {
-		LOGGER->Print(wstring(L"Error get  hadle process: ").append(GetLastErrorAsString()), Logger::Type::Error);
-		return false;
-	}
+	return false;
 }
 
 bool ProcessesInfo::IsNeedToSetAffinity(const vector<double>& values) {
@@ -421,54 +486,57 @@ void ProcessesInfo::SetAffinity() {
 			
 		ProcessInfo& process = (*it)->second;
 		auto process_numa_groups = GetProcessNumaGroup(process.pid_);
-			
-		if (!cur_numa) {
-			if (process_numa_groups.size() == 1) {
-				cur_numa = &numa_groups_[0];
-			}
-			else if (process_numa_groups.size() > 1) {
-				cur_numa = CalculateNumaWeight(process.threads_, numa_groups_);
-			}
-			else {
-				LOGGER->Print(L"Error get numa groups for process", Logger::Type::Error);
-				break;
-			}
-		}
 
-		LOGGER->Print(
-			wstring(process.name_).
-			append(L";pid=").append(to_wstring(process.pid_)).
-			append(L";numa=").append(vectorToWstring(process_numa_groups)).
-			append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
-			true
-		);
+		if (process_numa_groups.size()) {
 
-		if (process_numa_groups.size() > 1 || process_numa_groups[0] != cur_numa->GroupMask.Group) {
-			if (!SetProcessAffinity(NtSetInformationProcess, process.pid_, &cur_numa->GroupMask)) {
-				LOGGER->Print(L"Error set process affinity!", Logger::Type::Error);
-			}
-		}
-
-		for (auto it_thread = process.threads_.begin(); it_thread < process.threads_.end(); ++it_thread) {
-			if (it_thread->group_affinity_.Group != cur_numa->GroupMask.Group) {
-				if (SetThreadAffinity(it_thread->thread_id_, &cur_numa->GroupMask)) {
-					LOGGER->Print(
-						wstring(process.name_).
-						append(L";pid=").append(to_wstring(process.pid_)).
-						append(L";tid=").append(to_wstring(it_thread->thread_id_)).
-						append(L";numa=[").append(to_wstring(it_thread->group_affinity_.Group)).append(L"]").
-						append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
-						true
-					);
+			if (!cur_numa) {
+				if (process_numa_groups.size() == 1) {
+					cur_numa = &numa_groups_[0];
+				}
+				else if (process_numa_groups.size() > 1) {
+					cur_numa = CalculateNumaWeight(process.threads_, numa_groups_);
 				}
 				else {
-					LOGGER->Print(L"Error set thread affinity!", Logger::Type::Error);
+					LOGGER->Print(L"Error get numa groups for process", Logger::Type::Error);
+					break;
 				}
 			}
-		}			
-		++index_numa_group;
-		if (index_numa_group >= numa_groups_.size()) index_numa_group = 0;
-		cur_numa = &numa_groups_[index_numa_group];
+
+			LOGGER->Print(
+				wstring(process.name_).
+				append(L";pid=").append(to_wstring(process.pid_)).
+				append(L";numa=").append(vectorToWstring(process_numa_groups)).
+				append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
+				true
+			);
+
+			if (process_numa_groups.size() > 1 || process_numa_groups[0] != cur_numa->GroupMask.Group || test) {
+				if (!SetProcessAffinity(NtSetInformationProcess, process.pid_, &cur_numa->GroupMask)) {
+					LOGGER->Print(L"Error set process affinity!", Logger::Type::Error);
+				}
+			}
+
+			for (auto it_thread = process.threads_.begin(); it_thread < process.threads_.end(); ++it_thread) {
+				if (it_thread->group_affinity_.Group != cur_numa->GroupMask.Group || test) {
+					if (SetThreadAffinity(it_thread->thread_id_, &cur_numa->GroupMask)) {
+						LOGGER->Print(
+							wstring(process.name_).
+							append(L";pid=").append(to_wstring(process.pid_)).
+							append(L";tid=").append(to_wstring(it_thread->thread_id_)).
+							append(L";numa=[").append(to_wstring(it_thread->group_affinity_.Group)).append(L"]").
+							append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
+							true
+						);
+					}
+					else {
+						LOGGER->Print(L"Error set thread affinity!", Logger::Type::Error);
+					}
+				}
+			}
+			++index_numa_group;
+			if (index_numa_group >= numa_groups_.size()) index_numa_group = 0;
+			cur_numa = &numa_groups_[index_numa_group];
+		}
 	}
 }
 
@@ -484,20 +552,20 @@ void ProcessesInfo::GetNumaInfo() {
 		for (int i = 0; pCur < pEnd; pCur += ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)pCur)->Size, ++i) {
 			p = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)pCur;
 			numa_groups_.push_back(p->NumaNode);
-			if (LOGGER->LogType() == Logger::Type::Trace) {
+			if (LOGGER->LogType() == Logger::Type::Trace || test) {
 				wstring msg = L"";
 				msg
 					.append(L"NodeNumber=").append(to_wstring(p->NumaNode.NodeNumber))
 					.append(L";GroupMask.Group=").append(to_wstring(p->NumaNode.GroupMask.Group))
 					.append(L";GroupMask.Mask=").append(to_wstring(p->NumaNode.GroupMask.Mask));
-				LOGGER->Print(msg, Logger::Type::Trace);
+				LOGGER->Print(msg, Logger::Type::Trace, test);
 			}
 		}
 	}
 }
 
 vector<USHORT> ProcessesInfo::GetProcessNumaGroup(ULONG id_process) {
-	HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, id_process);
+	HANDLE hProcess = openProcess(id_process);
 	if (hProcess != NULL) {
 		std::vector<USHORT> GroupArray(128);
 		USHORT GroupCount = static_cast<USHORT>(GroupArray.size());
@@ -508,13 +576,14 @@ vector<USHORT> ProcessesInfo::GetProcessNumaGroup(ULONG id_process) {
 		}
 		else {
 			CloseHandle(hProcess);
-			//std::wstring err_wstr = GetLastErrorAsString();
+			std::wstring err_wstr = L"Failed to retrieve processor group affinity for process pid ";
+			err_wstr
+				.append(std::to_wstring(id_process)).append(L". ")
+				.append(getLastError().second);
+			LOGGER->Print(err_wstr, Logger::Type::Error);
 			return {};
 		}
 		CloseHandle(hProcess);
 	}
-	else {
-		//std::wstring err_wstr = GetLastErrorAsString();
-		return {};
-	}
+	return {};
 }

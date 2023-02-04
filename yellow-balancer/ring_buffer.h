@@ -35,5 +35,8 @@ void RingBuffer<T>::Add(T value) {
 template <typename T>
 T RingBuffer<T>::Avg() {
 	T zero = 0;
-	return std::accumulate(buffer_.begin(), buffer_.begin() + size_, zero) / size_;
+	if (size_) {
+		return std::accumulate(buffer_.begin(), buffer_.begin() + size_, zero) / size_;
+	}
+	return 0;
 }

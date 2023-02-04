@@ -25,9 +25,10 @@ VOID WINAPI ServiceCtrlHandler(DWORD);
 DWORD WINAPI WorkerThread(LPVOID lpParam);
 
 wchar_t SERVICE_NAME[100] = L"Yellow Balancer Service";
-static const std::wstring VERSION = L"1.1";
+static const std::wstring VERSION = L"1.2";
 
 void RunConsole();
+void Testing();
 int InstallService(LPCWSTR serviceName, LPCWSTR servicePath);
 int RemoveService(LPCWSTR serviceName);
 
@@ -132,8 +133,18 @@ int wmain(int argc, wchar_t** argv) {
         return 0;
     }
 
+    if (program_options.IsVersion()) {
+        std::wcout << L"Yellow Balanser v" << VERSION;
+        return 0;
+    }
+
     std::wstring mode = program_options.Mode();
-    if (mode == L"console") {
+    if (mode == L"test") {
+        LOGGER->SetOutConsole(true);
+        Testing();
+        return 0;
+    }
+    else if (mode == L"console") {
         LOGGER->SetOutConsole(true);
         RunConsole();
         return 0;
@@ -179,6 +190,31 @@ int wmain(int argc, wchar_t** argv) {
     }
 
     LOGGER->Print(L"Yellow Balancer: stop service", true);
+}
+
+void Testing() {
+    SetConsoleCtrlHandler(HandlerRoutine, TRUE);
+    LOGGER->Print(L"Yellow Balancer: start testing permissions", true);
+    LOGGER->Print(std::wstring(L"Version: ").append(VERSION), true);
+
+    Settings settings;
+    if (!settings.Read(PROGRAM_PATH)) {
+        ExitProcess(1);
+    }
+    LOGGER->SetLogStorageDuration(settings.LogStorageDuration());
+
+    std::shared_ptr<ProcessesInfo> p_processes_info = std::make_shared<ProcessesInfo>();
+    p_processes_info->SetTest();
+    p_processes_info->Init(3, 10, 0, -1);
+    for (auto it = settings.Processes().begin(); it < settings.Processes().end(); ++it) {
+        p_processes_info->AddFilter(*it);
+    }
+
+    LOGGER->NewFileWithLock();
+    LOGGER->Print(L"Collection of information...", true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(3100));
+    p_processes_info->Read();
+    p_processes_info->SetAffinity();
 }
 
 void RunConsole() {
