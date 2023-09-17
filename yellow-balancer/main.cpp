@@ -25,7 +25,7 @@ VOID WINAPI ServiceCtrlHandler(DWORD);
 DWORD WINAPI WorkerThread(LPVOID lpParam);
 
 wchar_t SERVICE_NAME[100] = L"Yellow Balancer Service";
-static const std::wstring VERSION = L"1.2";
+static const std::wstring VERSION = L"1.3";
 
 void RunConsole();
 void Testing();
@@ -293,6 +293,10 @@ int InstallService(LPCWSTR serviceName, LPCWSTR servicePath) {
     SERVICE_DESCRIPTION info;
     info.lpDescription = LPWSTR(L"Yellow Balancer Service: process balancer by numa groups");
     ChangeServiceConfig2(hService, SERVICE_CONFIG_DESCRIPTION, &info);
+
+    std::vector<SC_ACTION> types_actions = { {SC_ACTION_RESTART, 60000}, {SC_ACTION_RESTART, 120000 }, {SC_ACTION_RESTART, 60000} };
+    SERVICE_FAILURE_ACTIONS sfa = { 300, NULL, NULL, static_cast<DWORD>(types_actions.size()), &types_actions[0] };
+    ChangeServiceConfig2(hService, SERVICE_CONFIG_FAILURE_ACTIONS, &sfa);
 
     CloseServiceHandle(hService);
     CloseServiceHandle(hSCManager);
