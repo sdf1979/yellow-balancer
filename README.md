@@ -3,14 +3,16 @@
  
 При эксплуатации высоконагруженных систем на базе 1С:Предприятие на серверах, имеющих больше 64 процессоров и имеющих более одной группы NUMA столкнулись с неравномерным распределением процессов 1С по группам NUMA. Для начала пробовали силами дежурной смены менять привязку процессов 1С:Предприятие к группам NUMA через Task Manager. Но это было возможно в основном только один раз. При повторной попытке через некоторое время возникала ошибка "Отказано в доступе". Было принято решение, использую API OS Windows, попробовать самим управлять распределением процессов и потоков по группам NUMA. В результате было создано приложение - служба windows.
 При запуске программы создаются файл settings.json с настройками по умолчанию
-{ 
-  "switching_frequency_in_seconds" : 10,
-  "cpu_analysis_period_in_seconds" : 60,
-  "log_storage_duration_in_hours" : 24,
-  "maximum_cpu_value" : 70,
-  "delta_cpu_values" : 30,
-  "processes" : ["rphost.exe"]
-}
+
+    { 
+      "switching_frequency_in_seconds" : 10,
+      "cpu_analysis_period_in_seconds" : 60,
+      "log_storage_duration_in_hours" : 24,
+      "maximum_cpu_value" : 70,
+      "delta_cpu_values" : 30,
+      "processes" : ["rphost.exe"]
+    }
+
 switching_frequency_in_seconds - частота анализа выполнения балансировки, если необходимо (в секундах)
 cpu_analysis_period_in_seconds - период скользящего окна загрузки CPU numa групп и USER_TIME процессов (в секундах)
 log_storage_duration_in_hours - период хранения логов (в часах)
