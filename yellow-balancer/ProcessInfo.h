@@ -203,7 +203,7 @@ private:
 	std::unordered_set<std::wstring> process_filter_;
 	std::vector<ProcessInfoShort> processes_short_;
 	std::unordered_map<ULONG, ProcessInfo> processes_;
-	std::vector<NUMA_NODE_RELATIONSHIP> numa_groups_;
+	std::vector<NUMA_NODE_RELATIONSHIP> numa_nodes_;
 	PerfMonitor perf_monitor_;
 	int cpu_analysis_period_;
 	int ring_buffer_size_;
@@ -216,6 +216,7 @@ private:
 	void InitNtQuerySystemInformation();
 	void GetNumaInfo();
 	std::vector<USHORT> GetProcessNumaGroup(ULONG id_process);
+	std::pair<DWORD_PTR, DWORD_PTR> GetProcAffinityMask(ULONG id_process);
 	pNtSetInformationProcess NtSetInformationProcess;
 	pNtQuerySystemInformation NtQuerySystemInformation;
 	std::unordered_map<ULONG, ProcessInfoShort> ActiveProcesses();

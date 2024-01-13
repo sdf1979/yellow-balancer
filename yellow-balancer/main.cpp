@@ -25,7 +25,7 @@ VOID WINAPI ServiceCtrlHandler(DWORD);
 DWORD WINAPI WorkerThread(LPVOID lpParam);
 
 wchar_t SERVICE_NAME[100] = L"Yellow Balancer Service";
-static const std::wstring VERSION = L"1.3";
+static const std::wstring VERSION = L"1.4";
 
 void RunConsole();
 void Testing();

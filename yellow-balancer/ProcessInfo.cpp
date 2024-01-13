@@ -61,12 +61,10 @@ wstringstream wss_;
 template<typename T>
 wstring vectorToWstring(const vector<T>& v) {
 	wstring separator = L"";
-	wss_ << L"[";
 	for (auto it = v.begin(); it < v.end(); ++it) {
 		wss_ << separator << *it;
 		separator = L",";
 	}
-	wss_ << L"]";
 	wstring wstr = wss_.str();
 	wss_.str(L"");
 	wss_.clear();
@@ -219,7 +217,7 @@ void ProcessesInfo::InitPerfMonitor(int cpu_analysis_period) {
 	computer_name.resize(sz_computer_name + 2);
 
 	perf_monitor_.AddCounter(wstring(computer_name).append(L"\\Processor Information(_Total)\\% Processor Time"));
-	for (auto it = numa_groups_.begin(); it != numa_groups_.end(); ++it) {
+	for (auto it = numa_nodes_.begin(); it != numa_nodes_.end(); ++it) {
 		perf_monitor_.AddCounter(wstring(computer_name).append(L"\\Processor Information(").append(to_wstring(it->NodeNumber)).append(L",_Total)\\% Processor Time"));
 	}
 	perf_monitor_.StartCollecting();
@@ -278,7 +276,7 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 		return {};
 	}
 
-	buflen = buffer_active_processes.size();
+	buflen = static_cast<ULONG>(buffer_active_processes.size());
 	if (NtQuerySystemInformation(SYSTEMPROCESSINFORMATION, &buffer_active_processes[0], buflen, &buflen)) {
 		wstring msg = L"ProcessesInfo::ActiveProcesses: ";
 		msg.append(getLastError().second);
@@ -306,14 +304,18 @@ unordered_map<ULONG, ProcessInfoShort> ProcessesInfo::ActiveProcesses() {
 				}
 			));
 
-			if (LOGGER->LogType() == Logger::Type::Trace) {
+			if (LOGGER->LogType() == Logger::Type::Trace || test) {
 				auto process_numa_group = GetProcessNumaGroup(info->ProcessId);
+				DWORD process_affinity_mask = 0;
+				DWORD system_affinity_mask = 0;
+				auto proc_affinity_mask = GetProcAffinityMask(info->ProcessId);
 				wstring msg = L"";
 				msg
 					.append(it_process.first->second.name_)
 					.append(L" pid ").append(to_wstring(it_process.first->second.pid_))
-					.append(L" groups ").append(vectorToWstring(process_numa_group));
-				LOGGER->Print(msg, Logger::Type::Trace);
+					.append(L" groups ").append(vectorToWstring(process_numa_group))
+					.append(L" mask ").append(to_wstring(proc_affinity_mask.first));
+				LOGGER->Print(msg, Logger::Type::Trace, test);
 			}
 
 			for (unsigned int j = 0; j < info->ThreadCount; j++) {
@@ -481,20 +483,21 @@ void ProcessesInfo::SetAffinity() {
 	}
 		
 	int index_numa_group = 0;
-	const NUMA_NODE_RELATIONSHIP* cur_numa = nullptr;
+	const NUMA_NODE_RELATIONSHIP* cur_numa_node = nullptr;
 	for (auto it = processes_affinity.begin(); it != processes_affinity.end(); ++it) {
 			
 		ProcessInfo& process = (*it)->second;
 		auto process_numa_groups = GetProcessNumaGroup(process.pid_);
+		auto process_affinity_mask = GetProcAffinityMask(process.pid_);
 
 		if (process_numa_groups.size()) {
 
-			if (!cur_numa) {
+			if (!cur_numa_node) {
 				if (process_numa_groups.size() == 1) {
-					cur_numa = &numa_groups_[0];
+					cur_numa_node = &numa_nodes_[0];
 				}
 				else if (process_numa_groups.size() > 1) {
-					cur_numa = CalculateNumaWeight(process.threads_, numa_groups_);
+					cur_numa_node = CalculateNumaWeight(process.threads_, numa_nodes_);
 				}
 				else {
 					LOGGER->Print(L"Error get numa groups for process", Logger::Type::Error);
@@ -502,29 +505,33 @@ void ProcessesInfo::SetAffinity() {
 				}
 			}
 
-			LOGGER->Print(
-				wstring(process.name_).
-				append(L";pid=").append(to_wstring(process.pid_)).
-				append(L";numa=").append(vectorToWstring(process_numa_groups)).
-				append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
-				true
-			);
+			if (process_numa_groups.size() > 1 || process_numa_groups[0] != cur_numa_node->GroupMask.Group || process_affinity_mask.first != cur_numa_node->GroupMask.Mask || test) {
+				LOGGER->Print(
+					wstring(process.name_).
+					append(L";pid=").append(to_wstring(process.pid_)).
+					append(L";numa group=").append(vectorToWstring(process_numa_groups)).
+					append(L";mask=").append(to_wstring(process_affinity_mask.first)).
+					append(L";new numa=").append(to_wstring(cur_numa_node->GroupMask.Group)).
+					append(L";new mask=").append(to_wstring(cur_numa_node->GroupMask.Mask)),
+					true
+				);
 
-			if (process_numa_groups.size() > 1 || process_numa_groups[0] != cur_numa->GroupMask.Group || test) {
-				if (!SetProcessAffinity(NtSetInformationProcess, process.pid_, &cur_numa->GroupMask)) {
+				if (!SetProcessAffinity(NtSetInformationProcess, process.pid_, &cur_numa_node->GroupMask)) {
 					LOGGER->Print(L"Error set process affinity!", Logger::Type::Error);
 				}
 			}
 
 			for (auto it_thread = process.threads_.begin(); it_thread < process.threads_.end(); ++it_thread) {
-				if (it_thread->group_affinity_.Group != cur_numa->GroupMask.Group || test) {
-					if (SetThreadAffinity(it_thread->thread_id_, &cur_numa->GroupMask)) {
+				if (it_thread->group_affinity_.Group != cur_numa_node->GroupMask.Group || it_thread->group_affinity_.Mask != cur_numa_node->GroupMask.Mask || test) {
+					if (SetThreadAffinity(it_thread->thread_id_, &cur_numa_node->GroupMask)) {
 						LOGGER->Print(
 							wstring(process.name_).
 							append(L";pid=").append(to_wstring(process.pid_)).
 							append(L";tid=").append(to_wstring(it_thread->thread_id_)).
-							append(L";numa=[").append(to_wstring(it_thread->group_affinity_.Group)).append(L"]").
-							append(L";new numa=[").append(to_wstring(cur_numa->GroupMask.Group)).append(L"]"),
+							append(L";numa group=").append(to_wstring(it_thread->group_affinity_.Group)).
+							append(L";mask=").append(to_wstring(it_thread->group_affinity_.Mask)).
+							append(L";new numa group=").append(to_wstring(cur_numa_node->GroupMask.Group)).
+							append(L";new mask=").append(to_wstring(cur_numa_node->GroupMask.Mask)),
 							true
 						);
 					}
@@ -534,14 +541,14 @@ void ProcessesInfo::SetAffinity() {
 				}
 			}
 			++index_numa_group;
-			if (index_numa_group >= numa_groups_.size()) index_numa_group = 0;
-			cur_numa = &numa_groups_[index_numa_group];
+			if (index_numa_group >= numa_nodes_.size()) index_numa_group = 0;
+			cur_numa_node = &numa_nodes_[index_numa_group];
 		}
 	}
 }
 
 void ProcessesInfo::GetNumaInfo() {
-	numa_groups_.resize(0);
+	numa_nodes_.resize(0);
 	DWORD ReturnLength = 0;
 	GetLogicalProcessorInformationEx(LOGICAL_PROCESSOR_RELATIONSHIP::RelationNumaNode, NULL, &ReturnLength);
 	std::vector<BYTE> buffer(ReturnLength);
@@ -551,15 +558,13 @@ void ProcessesInfo::GetNumaInfo() {
 		BYTE* pEnd = pCur + ReturnLength;
 		for (int i = 0; pCur < pEnd; pCur += ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)pCur)->Size, ++i) {
 			p = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)pCur;
-			numa_groups_.push_back(p->NumaNode);
-			if (LOGGER->LogType() == Logger::Type::Trace || test) {
-				wstring msg = L"";
-				msg
-					.append(L"NodeNumber=").append(to_wstring(p->NumaNode.NodeNumber))
-					.append(L";GroupMask.Group=").append(to_wstring(p->NumaNode.GroupMask.Group))
-					.append(L";GroupMask.Mask=").append(to_wstring(p->NumaNode.GroupMask.Mask));
-				LOGGER->Print(msg, Logger::Type::Trace, test);
-			}
+			numa_nodes_.push_back(p->NumaNode);
+			wstring msg = L"";
+			msg
+				.append(L"NodeNumber=").append(to_wstring(p->NumaNode.NodeNumber))
+				.append(L";GroupMask.Group=").append(to_wstring(p->NumaNode.GroupMask.Group))
+				.append(L";GroupMask.Mask=").append(to_wstring(p->NumaNode.GroupMask.Mask));
+			LOGGER->Print(msg, Logger::Type::Info, true);
 		}
 	}
 }
@@ -587,3 +592,22 @@ vector<USHORT> ProcessesInfo::GetProcessNumaGroup(ULONG id_process) {
 	}
 	return {};
 }
+
+pair<DWORD_PTR, DWORD_PTR> ProcessesInfo::GetProcAffinityMask(ULONG id_process) {
+	DWORD_PTR process_affinity_mask = 0;
+	DWORD_PTR system_affinity_mask = 0;
+
+	HANDLE hProcess = openProcess(id_process);
+	if (hProcess != NULL) {
+		if (!GetProcessAffinityMask(hProcess, &process_affinity_mask, &system_affinity_mask)) {
+			std::wstring err_wstr = L"Failed to retrieve processor affinity mask for process pid ";
+			err_wstr
+				.append(std::to_wstring(id_process)).append(L". ")
+				.append(getLastError().second);
+			LOGGER->Print(err_wstr, Logger::Type::Error);
+		}
+		CloseHandle(hProcess);
+	}
+	return { process_affinity_mask, system_affinity_mask };
+}
+
